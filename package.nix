@@ -75,6 +75,12 @@ let
   version = "0.2.2-rc.3";
   electronVersion = "44.7.0";
 
+  primaryRuntimeAssets = import ./primary-runtime-assets.nix { inherit fetchurl; };
+  primaryRuntimeAssetsJson = builtins.toJSON (map (asset: {
+    inherit (asset) sha256;
+    path = "${asset.src}";
+  }) primaryRuntimeAssets);
+
   runtimeLibs = [
     alsa-lib
     at-spi2-atk
@@ -247,8 +253,8 @@ stdenv.mkDerivation (finalAttrs: {
     mkdir -p $appRoot
     cp -a . $appRoot/
     install -Dm644 ${./nix/prepare-desktop-project.mjs} $appRoot/nix/prepare-desktop-project.mjs
+    install -Dm644 ${./nix/prepare-primary-runtime.mjs} $appRoot/nix/prepare-primary-runtime.mjs
 
-    mkdir -p $appRoot/primary-runtime
     node --import tsx/esm $appRoot/nix/prepare-desktop-project.mjs
 
     install -Dm644 apps/desktop/resources/icon.png \
@@ -258,6 +264,22 @@ stdenv.mkDerivation (finalAttrs: {
   '';
 
   postFixup = ''
+    appRoot=$out/share/deepseek-harness
+    assetsFile=$(mktemp)
+    cat > "$assetsFile" <<'EOF'
+${primaryRuntimeAssetsJson}
+EOF
+
+    # Generate after the generic fixup so patchShebangs/strip do not rewrite
+    # the self-contained Python payload.
+    export PRIMARY_RUNTIME_ASSETS="$assetsFile"
+    export PRIMARY_RUNTIME_CACHE="$(mktemp -d)"
+    # The sandbox has no /lib64 loader for the payload's native interpreters;
+    # upstream smoke checks are run by the development flow on a real host.
+    export PRIMARY_RUNTIME_SMOKE=0
+    cd "$appRoot"
+    node --import tsx/esm "$appRoot/nix/prepare-primary-runtime.mjs"
+
     makeWrapper ${electron}/bin/electron $out/bin/deepseek-harness \
       --add-flags "$out/share/deepseek-harness/apps/desktop" \
       --set DSH_DESKTOP_PRIMARY_RUNTIME_DIR "$out/share/deepseek-harness/primary-runtime" \

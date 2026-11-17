@@ -102,18 +102,24 @@ configuração atual já usa esse recurso para o Multipass.
   não aceita o Electron mais novo do nixpkgs.
 - O projeto de desenvolvimento do Desktop é gerado em
   `$out/share/deepseek-harness/apps/desktop/.desktop-build/development/project`.
+- O **runtime primário** é montado no build a partir de 15 assets fixos
+  (`primary-runtime-assets.nix`): Node 24.21.0, CPython 3.12.14 standalone e as
+  13 wheels Python travadas. O resultado fica em
+  `$out/share/deepseek-harness/primary-runtime` com `runtime.json` e
+  `dependencies/{node,pnpm,python}`. No primeiro uso, o app copia esse payload
+  para `$DSH_HOME/dsh-runtimes/dsh-primary-runtime`.
 - O wrapper `deepseek-harness` inicia o Electron com esse projeto, aponta o
-  `DSH_DESKTOP_DSH_DIR`, o pnpm embutido e bibliotecas de runtime do
-  Electron/Chromium.
+  `DSH_DESKTOP_DSH_DIR`, o pnpm embutido, o `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` e
+  bibliotecas de runtime do Electron/Chromium.
 
 ## Limitações
 
 - Apenas `x86_64-linux`.
-- **O runtime primário (Python/Office) ainda não está incluído.** O diretório
-  `primary-runtime` é criado vazio. O chat, o agente, a UI Web interna, o
-  terminal e os plugins básicos funcionam; as ferramentas que exigem o Python
-  embarcado ou a conversão de documentos do Office vão reportar erro até esse
-  payload ser adicionado.
+- O payload Python/Office é copiado para `$DSH_HOME` no primeiro uso (cerca de
+  397 MB), como no Desktop original; o Nix store permanece somente leitura.
+- O smoke de Python/Office do upstream foi executado na validação do pacote,
+  mas não roda dentro do sandbox do Nix porque o interpretador standalone
+  depende do loader `/lib64` do sistema. O build apenas monta o payload.
 - O Desktop não é um alvo de release oficial do upstream. O patch pode precisar
   de rebase em versões futuras.
 - Atualizações são feitas pelo Nix, não pelo updater interno do Electron. Como
@@ -129,9 +135,11 @@ configuração atual já usa esse recurso para o Multipass.
 3. Atualize o `hash` do `fetchFromGitHub` (`nix flake prefetch` ou o erro do
    `nix build`).
 4. Atualize o `hash` do `fetchPnpmDeps` com o valor reportado pelo build.
-5. Se o upstream mudar a versão do Electron exigida pelo addon, atualize
+5. Atualize os hashes/URLs em `primary-runtime-assets.nix` se o
+   `scripts/primary-runtime/lock.json` do upstream mudar.
+6. Se o upstream mudar a versão do Electron exigida pelo addon, atualize
    `electronVersion` e o hash do ZIP oficial.
-6. Valide com:
+7. Valide com:
 
    ```bash
    nix build
@@ -141,8 +149,8 @@ configuração atual já usa esse recurso para o Multipass.
 
 ## Cache binário (opcional, recomendado)
 
-O resultado ocupa cerca de **2,7 GB** no store (o `node_modules` do monorepo é
-grande). Para não recompilar em cada máquina:
+O resultado ocupa cerca de **3,1 GB** no store (o `node_modules` do monorepo e
+o payload Python/Office são grandes). Para não recompilar em cada máquina:
 
 1. Crie um cache no [Cachix](https://app.cachix.org), por exemplo
    `matheusrosafogo-deepseek-harness`.
